@@ -1,0 +1,176 @@
+--// SERVICES
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+
+local player = Players.LocalPlayer
+local PlaceId = game.PlaceId
+
+--// SETTINGS
+local autoKill = true
+local whitelist = {}
+local hopDelay = 40
+
+--// LOCKPOS
+local targetPos = Vector3.new(-26.72, 0.13, 60.01)
+
+task.spawn(function()
+    while true do
+        local char = player.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+
+            if root and humanoid then
+                root.CFrame = CFrame.new(targetPos)
+                humanoid.WalkSpeed = 0
+                humanoid.JumpPower = 0
+                humanoid.AutoRotate = false
+                root.Velocity = Vector3.zero
+                root.RotVelocity = Vector3.zero
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+--// GUI
+local ScreenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+ScreenGui.ResetOnSpawn = false
+
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Size = UDim2.new(0, 180, 0, 90)
+Frame.Position = UDim2.new(0.65, 0, 0.25, 0)
+Frame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+Frame.Active = true
+Frame.Draggable = true
+Frame.BorderSizePixel = 0
+
+Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
+
+local stroke = Instance.new("UIStroke", Frame)
+stroke.Thickness = 1.5
+stroke.Color = Color3.fromRGB(60, 60, 60)
+stroke.Transparency = 0.4
+
+local layout = Instance.new("UIListLayout", Frame)
+layout.Padding = UDim.new(0, 2)
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+--// LABEL
+local function makeLabel(text)
+    local t = Instance.new("TextLabel", Frame)
+    t.Size = UDim2.new(1, 0, 0, 25)
+    t.BackgroundTransparency = 1
+    t.Text = text
+    t.TextColor3 = Color3.fromRGB(255, 60, 60)
+    t.Font = Enum.Font.GothamBold
+    t.TextSize = 14
+    t.TextXAlignment = Enum.TextXAlignment.Center
+
+    local s = Instance.new("UIStroke", t)
+    s.Thickness = 0.8
+    s.Transparency = 0.5
+    s.Color = Color3.fromRGB(0, 0, 0)
+
+    return t
+end
+
+--// UI
+local Title = makeLabel("Private Mourch")
+local KillText = makeLabel("Kill: 0")
+local TimerText = makeLabel(hopDelay.."s")
+
+--// KILL COUNTER (FIXED)
+local function setupKillCounter()
+    local leaderstats = player:WaitForChild("leaderstats", 10)
+    if not leaderstats then return end
+
+    local stat =
+        leaderstats:FindFirstChild("Kills")
+        or leaderstats:FindFirstChild("Kill")
+        or leaderstats:FindFirstChild("Eliminations")
+
+    if not stat then return end
+
+    KillText.Text = "Kill: "..stat.Value
+
+    stat:GetPropertyChangedSignal("Value"):Connect(function()
+        KillText.Text = "Kill: "..stat.Value
+    end)
+end
+
+setupKillCounter()
+
+--// AUTO KILL
+task.spawn(function()
+    while autoKill do
+        local char = player.Character
+        if char then
+            local rightHand = char:FindFirstChild("RightHand")
+            local leftHand = char:FindFirstChild("LeftHand")
+
+            if rightHand and leftHand then
+                for _, target in ipairs(Players:GetPlayers()) do
+                    if target ~= player and not whitelist[target.Name] then
+                        local tchar = target.Character
+                        local root = tchar and tchar:FindFirstChild("HumanoidRootPart")
+
+                        if root then
+                            pcall(function()
+                                firetouchinterest(rightHand, root, 1)
+                                firetouchinterest(leftHand, root, 1)
+                                firetouchinterest(rightHand, root, 0)
+                                firetouchinterest(leftHand, root, 0)
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+--// SERVER HOP (FINAL CLEAN VERSION)
+local function serverHop()
+    local url = "https://games.roblox.com/v1/games/"..PlaceId.."/servers/Public?sortOrder=Desc&limit=100"
+
+    local success, result = pcall(function()
+        return HttpService:JSONDecode(game:HttpGet(url))
+    end)
+
+    if not success or not result or not result.data then return end
+
+    local bestServer
+    local highest = 0
+
+    for _, server in pairs(result.data) do
+        if server.id ~= game.JobId and server.playing < server.maxPlayers then
+            if server.playing > highest then
+                highest = server.playing
+                bestServer = server
+            end
+        end
+    end
+
+    if bestServer then
+        TeleportService:TeleportToPlaceInstance(PlaceId, bestServer.id, player)
+    end
+end
+
+--// TIMER AUTO HOP
+task.spawn(function()
+    local t = hopDelay
+
+    while true do
+        TimerText.Text = t.."s"
+        task.wait(1)
+        t -= 1
+
+        if t <= 0 then
+            serverHop()
+            t = hopDelay
+        end
+    end
+end)
